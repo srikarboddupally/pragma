@@ -258,8 +258,8 @@ Update this as real code lands. Everything is **not started** until the file exi
 
 | Phase | Item | Status |
 |---|---|---|
-| 0 | Repo skeleton, config, logging, db session, app factory, docker-compose | ☐ not started |
-| 1 | Pydantic models + ORM tables + first migration (+RLS) | ☐ not started |
+| 0 | Repo skeleton, config, logging, db session, app factory, docker-compose | ✅ done (ruff clean, 7/7 tests pass, git initialized) |
+| 1 | Pydantic models + ORM tables + first migration (+RLS) | ✅ done (models, 8 ORM tables, 0001_init w/ pgvector+HNSW+RLS; 18 unit tests pass, 2 DB tests skip w/o Docker) |
 | 2 | Normalizer, chunker, embedder, dedup | ☐ not started |
 | 2 | Slack / GitHub / Notion connectors + Celery ingest | ☐ not started |
 | 3 | Vector store + `/search` + `/ask` + auth | ☐ not started |
@@ -268,7 +268,7 @@ Update this as real code lands. Everything is **not started** until the file exi
 | 5 | `issue_refund` (Stripe), audit log (RLS), approval queue | ☐ not started |
 | 6 | MCP server, sources OAuth, dashboard, E2E test | ☐ not started |
 
-**Next task:** Phase 0 — scaffold `backend/` (see [`docs/BUILD_PLAN.md` → Phase 0](docs/BUILD_PLAN.md)).
+**Next task:** Phase 2 — ingestion (cold path): `normalizer` → `chunker` → `embedder` → `dedup`, connector base + Slack/GitHub/Notion, Celery ingest tasks, plus the `providers/` (LLM + embeddings) abstractions. See [`docs/BUILD_PLAN.md` → Phase 2](docs/BUILD_PLAN.md).
 
 ---
 

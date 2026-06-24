@@ -15,13 +15,14 @@ from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import async_engine_from_config
 
 from app.config import get_settings
+from app.db import tables  # noqa: F401  (registers all tables on Base.metadata)
 from app.db.base import Base
 
-# When tables exist (Phase 1), import them so they register on Base.metadata, e.g.:
-# from app.db import tables  # noqa: F401
-
 config = context.config
-config.set_main_option("sqlalchemy.url", get_settings().database_url)
+# Respect a URL injected by the caller (e.g. tests pointing at an ephemeral Postgres);
+# otherwise fall back to the application settings.
+if not config.get_main_option("sqlalchemy.url"):
+    config.set_main_option("sqlalchemy.url", get_settings().database_url)
 
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
