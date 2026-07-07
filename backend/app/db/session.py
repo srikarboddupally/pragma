@@ -20,7 +20,10 @@ from app.config import get_settings
 
 _settings = get_settings()
 
-engine = create_async_engine(_settings.database_url, pool_pre_ping=True)
+engine = create_async_engine(
+    _settings.database_url, pool_pre_ping=True
+)  # sends a ping to the db to check if it's alive
+
 AsyncSessionLocal = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
 
 # Separate engine pinned to SERIALIZABLE isolation for dedup's concurrent-insert protection.
