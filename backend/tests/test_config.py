@@ -5,7 +5,7 @@ from app.config import EMBEDDING_DIMS, Settings, get_settings
 
 def test_settings_load_from_test_env() -> None:
     settings = get_settings()
-    assert settings.anthropic_api_key == "sk-ant-test-key"
+    assert settings.openrouter_api_key == "sk-or-test-key"
     assert settings.embedding_provider == "voyage"
 
 

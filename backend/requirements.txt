@@ -12,7 +12,6 @@ pydantic>=2
 pydantic-settings
 loguru
 httpx
-anthropic
 voyageai
 openai
 stripe

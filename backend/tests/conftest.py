@@ -19,7 +19,7 @@ import pytest
 _TEST_ENV = {
     "DATABASE_URL": "postgresql+asyncpg://pragma:pragma@localhost:5432/pragma_test",
     "REDIS_URL": "redis://localhost:6379/1",
-    "ANTHROPIC_API_KEY": "sk-ant-test-key",
+    "OPENROUTER_API_KEY": "sk-or-test-key",
     "VOYAGE_API_KEY": "voyage-test-key",
     "EMBEDDING_PROVIDER": "voyage",
     "STRIPE_SECRET_KEY": "sk_test_dummy",

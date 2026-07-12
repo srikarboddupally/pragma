@@ -178,3 +178,40 @@ class WorkspaceApiKey(Base):
     name: Mapped[str | None] = mapped_column(String)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class Outbox(Base):
+    """Transactional outbox (BUILD_PLAN Phase 1 retrofit + Distributed-systems standard).
+
+    A downstream event written in the SAME transaction as the data change that emits it, so a
+    crash can't leave the DB updated but the follow-up task un-enqueued (the dual-write problem).
+    A poller reads unpublished rows (``published_at IS NULL``) and enqueues the real Celery task,
+    then stamps ``published_at``. ``aggregate_id`` is a plain string (a ``workspace_id`` or
+    ``doc_id``, depending on ``event_type``) — deliberately not a FK, since it spans tables.
+    """
+
+    __tablename__ = "outbox"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    aggregate_id: Mapped[str] = mapped_column(String, nullable=False)
+    event_type: Mapped[str] = mapped_column(String, nullable=False)
+    payload: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class FailedTask(Base):
+    """Dead-letter record (BUILD_PLAN Phase 1 retrofit + Distributed-systems standard).
+
+    A Celery task that exhausts its retries lands here instead of being silently dropped, for
+    manual replay or alerting. ``args`` holds the task's ``{"args": [...], "kwargs": {...}}``.
+    """
+
+    __tablename__ = "failed_tasks"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    task_name: Mapped[str] = mapped_column(String, nullable=False)
+    args: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    error: Mapped[str] = mapped_column(Text, nullable=False)
+    failed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    retry_count: Mapped[int] = mapped_column(Integer, server_default="0")

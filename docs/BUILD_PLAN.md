@@ -72,7 +72,7 @@ Built and verified: `models/document.py` (`Document`, `Chunk`, `EmbeddedChunk`, 
 - *Test:* factory returns the configured provider; `embed()` is mocked.
 
 ### `backend/app/providers/llm.py` 🔌
-- `class LLMClient`: wraps the `anthropic` SDK.
+- `class LLMClient`: wraps the `openrouter`.
   - `async def extract_json(prompt, schema: type[BaseModel], model="claude-haiku-4-5") -> BaseModel` 🟥 — structured outputs, schema-guaranteed.
   - `async def complete(prompt, model="claude-sonnet-4-6") -> str` — for RAG answers.
 - *Test:* mocked; schema passed through; validated model returned.
@@ -110,6 +110,9 @@ Built and verified: `models/document.py` (`Document`, `Chunk`, `EmbeddedChunk`, 
 ### `backend/app/ingestion/connectors/slack.py` / `github.py` / `notion.py` 🔌
 - Slack: OAuth token, thread assembly, reactions preserved in `metadata`. GitHub: GitHub App, `since`-incremental, review approvals in `metadata`. Notion: poll-only, recursive blocks.
 - *Tests:* recorded fixtures; incremental `since`; mocked SDKs.
+
+***NOTE***
+One thing to remember for the GitHub connector (later): the PEM content read from that path is a real secret, but it's no longer a Settings field, so the field-based log redactor can't catch it automatically. When we build connectors/github.py, it must not log the key content itself.
 
 ### `backend/app/tasks/ingest.py` ❄ 🆕 (dead-letter + outbox poller)
 - `@celery_app.task(autoretry_for=(Exception,), retry_backoff=True, retry_backoff_max=600, retry_jitter=True, max_retries=5) def ingest_document(workspace_id, raw, source)` — on final failure, write to `failed_tasks` via `on_failure` handler, don't just let Celery discard it.
@@ -194,6 +197,13 @@ Built and verified: `models/document.py` (`Document`, `Chunk`, `EmbeddedChunk`, 
 
 **Phase 4 acceptance:** skills generate with sourced evidence; re-extraction versions correctly; event-driven clustering fires within seconds of an ingest, not just on the hourly sweep.
 
+**Known limitation (flagged during Phase 2 LLM provider work):** structured
+outputs via OpenRouter free-tier models are not guaranteed — 
+meta-llama/llama-3.3-70b-instruct:free generally honors response_format, but
+free-tier availability/rate limits are real risks. extract_json fails loud on
+malformed output by design (see llm.py). Test this against the live model
+before relying on it here — may need a paid model fallback for this call
+specifically.
 ---
 
 ## Phase 5 — Guardrails + actions + audit (CP path) 🟥

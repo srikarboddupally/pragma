@@ -38,7 +38,8 @@ class Settings(BaseSettings):
     redis_url: str = "redis://localhost:6379/0"
 
     # --- LLM / embeddings ---
-    anthropic_api_key: str = ""  # Claude: extraction, RAG, auto-titles
+    openrouter_api_key: str = ""  # LLM completion, via OpenRouter (default provider)
+    llm_model: str = "meta-llama/llama-3.3-70b-instruct:free"  # configurable, not hardcoded
     voyage_api_key: str = ""  # embeddings (default provider)
     openai_api_key: str = ""  # only if embedding_provider == "openai"
     embedding_provider: Literal["voyage", "openai", "local"] = "voyage"
@@ -48,7 +49,8 @@ class Settings(BaseSettings):
     slack_client_id: str = ""
     slack_client_secret: str = ""
     github_app_id: str = ""
-    github_app_private_key: str = ""  # PEM, newlines as \n
+    github_app_client_id: str = ""
+    github_app_private_key_path: str = ""  # path to the App's .pem private key file (read at use)
     notion_client_id: str = ""
     notion_client_secret: str = ""
 

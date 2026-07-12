@@ -14,12 +14,11 @@ from app.config import get_settings
 
 # Settings fields whose values must never appear in logs.
 _SECRET_FIELDS: tuple[str, ...] = (
-    "anthropic_api_key",
+    "openrouter_api_key",
     "voyage_api_key",
     "openai_api_key",
     "stripe_secret_key",
     "slack_client_secret",
-    "github_app_private_key",
     "notion_client_secret",
     "pragma_encryption_key",
 )

@@ -1,3 +1,4 @@
+
 """initial schema: core tables + pgvector + HNSW indexes + audit_log RLS
 
 Revision ID: 0001_init
@@ -186,8 +187,32 @@ def upgrade() -> None:
     )
     op.create_index("ix_workspace_api_keys_key_prefix", "workspace_api_keys", ["key_prefix"])
 
+    # Transactional outbox + dead-letter table (BUILD_PLAN Phase 1 retrofit). No FKs: the
+    # outbox spans aggregates and the dead-letter table is a standalone sink.
+    op.create_table(
+        "outbox",
+        sa.Column("id", UUID(as_uuid=True), primary_key=True),
+        sa.Column("aggregate_id", sa.String(), nullable=False),
+        sa.Column("event_type", sa.String(), nullable=False),
+        sa.Column("payload", JSONB(), nullable=False),
+        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now()),
+        sa.Column("published_at", sa.DateTime(timezone=True)),
+    )
+
+    op.create_table(
+        "failed_tasks",
+        sa.Column("id", UUID(as_uuid=True), primary_key=True),
+        sa.Column("task_name", sa.String(), nullable=False),
+        sa.Column("args", JSONB(), nullable=False),
+        sa.Column("error", sa.Text(), nullable=False),
+        sa.Column("failed_at", sa.DateTime(timezone=True), server_default=sa.func.now()),
+        sa.Column("retry_count", sa.Integer(), server_default="0"),
+    )
+
 
 def downgrade() -> None:
+    op.drop_table("failed_tasks")
+    op.drop_table("outbox")
     op.drop_table("workspace_api_keys")
     op.drop_table("audit_log")
     op.drop_table("agent_permissions")

@@ -6,7 +6,7 @@ from app.logging import configure_logging
 
 def test_secret_is_redacted_from_logs() -> None:
     configure_logging()
-    secret = get_settings().anthropic_api_key
+    secret = get_settings().openrouter_api_key
     assert secret  # sanity: the test env set it
 
     captured: list[str] = []

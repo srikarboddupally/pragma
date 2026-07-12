@@ -1,0 +1,933 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Pragma — Architecture, End to End</title>
+<style>
+  /* ============================================================
+     Pragma architecture demo — design system
+     Color-coded by DATA TYPE so a payload keeps its identity as it
+     flows left→right through the pipeline. Sourced from BUILD_PLAN.md.
+     ============================================================ */
+  :root {
+    --bg: #0e1014;
+    --surface: #161922;
+    --surface-2: #1c2029;
+    --surface-3: #232834;
+    --border: #2b313d;
+    --border-strong: #3a4250;
+    --text: #e7eaf0;
+    --text-dim: #9aa4b4;
+    --text-faint: #66707f;
+    --mono: ui-monospace, "SF Mono", "Cascadia Code", "JetBrains Mono", Menlo, Consolas, monospace;
+    --sans: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+
+    /* data-type accents */
+    --source: #efa85f;
+    --doc: #6ea8fe;
+    --chunk: #3fd3c2;
+    --vector: #b98cf6;
+    --skill: #63d68a;
+    --action: #fb7d81;
+    --guardrail: #f4c košik; /* replaced below */
+    --guardrail: #f2c14e;
+    --query: #8098f6;
+    --user: #8ea3b8;
+
+    --radius: 12px;
+    --radius-sm: 8px;
+    --shadow: 0 1px 2px rgba(0,0,0,.4), 0 8px 24px rgba(0,0,0,.28);
+    --maxw: 1180px;
+  }
+
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0;
+    background:
+      radial-gradient(1200px 600px at 50% -10%, #1a1f2b 0%, transparent 60%),
+      var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+  }
+  a { color: var(--query); text-decoration: none; }
+  h1, h2, h3 { line-height: 1.2; margin: 0; }
+  code, .mono { font-family: var(--mono); }
+  ::selection { background: rgba(128,152,246,.35); }
+
+  .wrap { max-width: var(--maxw); margin: 0 auto; padding: 0 20px; }
+
+  /* ---------- header ---------- */
+  header.hero {
+    padding: 44px 0 22px;
+    border-bottom: 1px solid var(--border);
+    background: linear-gradient(180deg, rgba(22,25,34,.6), transparent);
+  }
+  .eyebrow {
+    font-family: var(--mono); font-size: 12px; letter-spacing: .14em;
+    text-transform: uppercase; color: var(--text-faint); margin-bottom: 12px;
+  }
+  h1 { font-size: clamp(28px, 4vw, 42px); font-weight: 680; letter-spacing: -.02em; }
+  h1 .accent { color: var(--query); }
+  .lede { color: var(--text-dim); max-width: 720px; margin-top: 12px; font-size: 16px; }
+
+  .legend { display: flex; flex-wrap: wrap; gap: 8px 14px; margin-top: 22px; }
+  .legend .chip {
+    display: inline-flex; align-items: center; gap: 7px;
+    font-size: 12.5px; color: var(--text-dim);
+    background: var(--surface); border: 1px solid var(--border);
+    padding: 4px 10px; border-radius: 999px;
+  }
+  .dot { width: 9px; height: 9px; border-radius: 50%; flex: none; box-shadow: 0 0 8px currentColor; }
+
+  /* ---------- sticky pipeline nav ---------- */
+  nav.pipeline {
+    position: sticky; top: 0; z-index: 20;
+    background: rgba(14,16,20,.82); backdrop-filter: blur(10px);
+    border-bottom: 1px solid var(--border);
+  }
+  .pipeline-track {
+    display: flex; align-items: stretch; gap: 0; overflow-x: auto;
+    padding: 10px 20px; max-width: var(--maxw); margin: 0 auto;
+    scrollbar-width: thin;
+  }
+  .pstep {
+    display: flex; align-items: center; gap: 8px; flex: none;
+    border: none; background: none; cursor: pointer; color: var(--text-dim);
+    font-family: var(--sans); font-size: 13px; padding: 6px 4px;
+  }
+  .pstep .num {
+    width: 22px; height: 22px; border-radius: 6px; flex: none;
+    display: grid; place-items: center; font-family: var(--mono); font-size: 11px;
+    background: var(--surface-2); border: 1px solid var(--border);
+    color: var(--text-dim); transition: .18s;
+  }
+  .pstep .plabel { white-space: nowrap; transition: .18s; }
+  .pstep:hover .plabel { color: var(--text); }
+  .pstep.active .plabel { color: var(--text); font-weight: 600; }
+  .pstep.active .num { color: #0e1014; font-weight: 700; }
+  .pstep .arrow { color: var(--text-faint); margin: 0 2px; }
+  .pstep:last-child .arrow { display: none; }
+
+  /* ---------- controls ---------- */
+  .controls { display: flex; gap: 10px; align-items: center; margin: 26px 0 4px; }
+  .btn {
+    font-family: var(--sans); font-size: 13px; color: var(--text);
+    background: var(--surface-2); border: 1px solid var(--border-strong);
+    padding: 7px 13px; border-radius: 8px; cursor: pointer; transition: .15s;
+  }
+  .btn:hover { background: var(--surface-3); border-color: var(--query); }
+  .btn.primary { background: var(--query); color: #0c0f18; border-color: var(--query); font-weight: 600; }
+  .btn.primary:hover { filter: brightness(1.08); }
+
+  /* ---------- section shell ---------- */
+  section.stage { padding: 30px 0; border-bottom: 1px solid var(--border); scroll-margin-top: 60px; }
+  .stage-head { display: flex; align-items: flex-start; gap: 16px; cursor: pointer; user-select: none; }
+  .stage-num {
+    font-family: var(--mono); font-size: 15px; font-weight: 700; color: #0e1014;
+    width: 34px; height: 34px; border-radius: 9px; flex: none; display: grid; place-items: center;
+    box-shadow: var(--shadow);
+  }
+  .stage-title { font-size: 21px; font-weight: 640; letter-spacing: -.01em; }
+  .stage-sub { color: var(--text-dim); font-size: 14px; margin-top: 3px; }
+  .stage-tag {
+    font-family: var(--mono); font-size: 11px; padding: 2px 8px; border-radius: 999px;
+    border: 1px solid currentColor; margin-left: auto; flex: none; text-transform: uppercase; letter-spacing: .06em;
+  }
+  .chev { margin-left: 10px; color: var(--text-faint); transition: transform .2s; flex: none; font-size: 13px; }
+  .stage.collapsed .chev { transform: rotate(-90deg); }
+  .stage-body { margin-top: 20px; }
+  .stage.collapsed .stage-body { display: none; }
+
+  /* ---------- generic cards / grid ---------- */
+  .grid { display: grid; gap: 14px; }
+  .cols-2 { grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); }
+  .cols-4 { grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); }
+
+  .card {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 14px 15px; position: relative; overflow: hidden;
+  }
+  .card::before { content: ""; position: absolute; inset: 0 auto 0 0; width: 3px; background: var(--border-strong); }
+  .card.t-source::before { background: var(--source); }
+  .card.t-doc::before { background: var(--doc); }
+  .card.t-chunk::before { background: var(--chunk); }
+  .card.t-vector::before { background: var(--vector); }
+  .card.t-skill::before { background: var(--skill); }
+  .card.t-action::before { background: var(--action); }
+  .card.t-guardrail::before { background: var(--guardrail); }
+  .card.t-query::before { background: var(--query); }
+  .card.t-user::before { background: var(--user); }
+
+  .card-head { display: flex; align-items: center; gap: 8px; margin-bottom: 9px; }
+  .badge {
+    font-family: var(--mono); font-size: 10.5px; letter-spacing: .05em; text-transform: uppercase;
+    padding: 2px 7px; border-radius: 5px; border: 1px solid currentColor; font-weight: 600;
+  }
+  .b-source { color: var(--source); } .b-doc { color: var(--doc); } .b-chunk { color: var(--chunk); }
+  .b-vector { color: var(--vector); } .b-skill { color: var(--skill); } .b-action { color: var(--action); }
+  .b-guardrail { color: var(--guardrail); } .b-query { color: var(--query); } .b-user { color: var(--user); }
+  .card-title { font-size: 14px; font-weight: 600; }
+  .muted { color: var(--text-dim); }
+  .faint { color: var(--text-faint); }
+  .small { font-size: 12.5px; }
+
+  /* key/value doc shape */
+  .kv { font-family: var(--mono); font-size: 12.5px; display: grid; grid-template-columns: auto 1fr; gap: 3px 12px; }
+  .kv .k { color: var(--text-faint); }
+  .kv .v { color: var(--text); word-break: break-word; }
+  .kv .v .hl { color: var(--skill); }
+
+  pre.raw {
+    font-family: var(--mono); font-size: 12px; color: var(--text-dim);
+    background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius-sm);
+    padding: 11px 12px; margin: 0; overflow-x: auto; white-space: pre-wrap; word-break: break-word;
+  }
+  pre.raw .key { color: var(--source); }
+  pre.raw .str { color: #a7d78f; }
+  pre.raw .num { color: var(--vector); }
+  pre.raw .cmt { color: var(--text-faint); font-style: italic; }
+
+  .flowline { display: flex; align-items: center; gap: 10px; color: var(--text-faint); margin: 6px 0; font-size: 12px; }
+  .flowline::before, .flowline::after { content: ""; height: 1px; background: var(--border); flex: 1; }
+
+  .arrow-down { text-align: center; color: var(--text-faint); font-size: 20px; margin: 4px 0; }
+
+  details.deep { margin-top: 12px; border-top: 1px dashed var(--border); padding-top: 10px; }
+  details.deep > summary {
+    cursor: pointer; color: var(--query); font-size: 12.5px; font-family: var(--mono); list-style: none;
+  }
+  details.deep > summary::-webkit-details-marker { display: none; }
+  details.deep > summary::before { content: "▸ "; }
+  details.deep[open] > summary::before { content: "▾ "; }
+  details.deep .deep-body { margin-top: 10px; }
+
+  .note {
+    font-size: 12.5px; color: var(--text-dim); background: var(--surface-2);
+    border: 1px solid var(--border); border-left: 3px solid var(--query);
+    border-radius: 6px; padding: 9px 12px; margin-top: 12px;
+  }
+  .spec {
+    font-family: var(--mono); font-size: 11px; color: var(--text-faint);
+    border: 1px solid var(--border); border-radius: 5px; padding: 1px 6px; white-space: nowrap;
+  }
+
+  /* transform pair (raw -> document) */
+  .pair { display: grid; grid-template-columns: 1fr 34px 1fr; gap: 8px; align-items: stretch; }
+  .pair .mid { display: grid; place-items: center; color: var(--text-faint); font-size: 20px; }
+  @media (max-width: 760px) { .pair { grid-template-columns: 1fr; } .pair .mid { transform: rotate(90deg); } }
+
+  /* chunk stack + overlap */
+  .chunk-block { border: 1px solid var(--border); border-left: 3px solid var(--chunk); border-radius: 8px; padding: 10px 12px; background: var(--surface); margin-bottom: 10px; }
+  .chunk-block .chead { display: flex; gap: 10px; align-items: center; font-family: var(--mono); font-size: 11.5px; color: var(--text-dim); margin-bottom: 7px; flex-wrap: wrap; }
+  .chunk-block .ctext { font-size: 13px; color: var(--text); }
+  .overlap { background: color-mix(in srgb, var(--chunk) 26%, transparent); border-radius: 3px; padding: 0 2px; color: #cdeee9; }
+
+  /* vector viz */
+  .vec { display: flex; align-items: flex-end; gap: 2px; height: 34px; }
+  .vec i { width: 4px; background: linear-gradient(180deg, var(--vector), color-mix(in srgb, var(--vector) 25%, transparent)); border-radius: 2px 2px 0 0; display: block; }
+  .vecrow { font-family: var(--mono); font-size: 11.5px; color: var(--vector); margin-top: 6px; }
+
+  /* db table */
+  .dbtable { width: 100%; border-collapse: collapse; font-family: var(--mono); font-size: 11.5px; }
+  .dbtable th, .dbtable td { text-align: left; padding: 7px 9px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+  .dbtable th { color: var(--text-faint); font-weight: 600; text-transform: uppercase; letter-spacing: .05em; font-size: 10px; }
+  .dbtable td { color: var(--text-dim); }
+  .dbtable .scroll { overflow-x: auto; }
+  .tablewrap { overflow-x: auto; border: 1px solid var(--border); border-radius: var(--radius-sm); }
+
+  /* retrieval */
+  .ret-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  @media (max-width: 720px) { .ret-grid { grid-template-columns: 1fr; } }
+  .ranklist { list-style: none; padding: 0; margin: 8px 0 0; display: grid; gap: 6px; }
+  .ranklist li { display: flex; align-items: center; gap: 9px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 7px; padding: 7px 9px; font-size: 12.5px; }
+  .ranklist .r { font-family: var(--mono); font-size: 11px; color: var(--text-faint); width: 26px; flex: none; }
+  .ranklist .who { font-family: var(--mono); font-size: 11.5px; flex: none; padding: 1px 6px; border-radius: 4px; }
+  .ranklist .sc { margin-left: auto; font-family: var(--mono); font-size: 11px; color: var(--text-dim); }
+  .who.A { color: var(--doc); border: 1px solid var(--doc); }
+  .who.B { color: var(--source); border: 1px solid var(--source); }
+  .who.C { color: var(--chunk); border: 1px solid var(--chunk); }
+  .who.D { color: var(--vector); border: 1px solid var(--vector); }
+  .who.Ap { color: var(--user); border: 1px solid var(--user); }
+  .pipeflow { display: grid; gap: 10px; margin-top: 14px; }
+  .pstage { border: 1px solid var(--border); border-radius: 9px; padding: 11px 13px; background: var(--surface); opacity: .5; transition: opacity .35s, border-color .35s, box-shadow .35s; }
+  .pstage.on { opacity: 1; border-color: var(--query); box-shadow: 0 0 0 1px color-mix(in srgb, var(--query) 40%, transparent); }
+  .pstage h4 { font-size: 13px; margin: 0 0 5px; display: flex; align-items: center; gap: 8px; }
+  .pstage h4 .spec { margin-left: auto; }
+
+  /* guardrail */
+  .scenario-tabs { display: flex; gap: 8px; margin-bottom: 14px; flex-wrap: wrap; }
+  .scenario-tabs .btn.active { border-color: var(--action); color: var(--text); background: var(--surface-3); }
+  .checks { display: grid; gap: 8px; counter-reset: chk; }
+  .check { display: flex; align-items: center; gap: 12px; background: var(--surface); border: 1px solid var(--border); border-radius: 9px; padding: 11px 13px; }
+  .check .cn { font-family: var(--mono); font-size: 11px; color: var(--text-faint); width: 18px; flex: none; }
+  .check .cbody { flex: 1; }
+  .check .cname { font-size: 13.5px; font-weight: 600; }
+  .check .cdesc { font-size: 12px; color: var(--text-dim); margin-top: 2px; }
+  .check .cstat { font-family: var(--mono); font-size: 11px; font-weight: 700; padding: 3px 9px; border-radius: 999px; flex: none; }
+  .st-pass { color: var(--skill); border: 1px solid var(--skill); }
+  .st-esc { color: var(--guardrail); border: 1px solid var(--guardrail); }
+  .st-rej { color: var(--action); border: 1px solid var(--action); }
+  .st-skip { color: var(--text-faint); border: 1px solid var(--border-strong); }
+  .decision { margin-top: 14px; border-radius: 10px; padding: 13px 15px; font-size: 13.5px; border: 1px solid; }
+  .decision.approved { border-color: var(--skill); background: color-mix(in srgb, var(--skill) 9%, transparent); }
+  .decision.escalated { border-color: var(--guardrail); background: color-mix(in srgb, var(--guardrail) 10%, transparent); }
+  .decision b { font-family: var(--mono); }
+
+  /* user view */
+  .chat { max-width: 640px; margin: 0 auto; }
+  .bubble-q { background: var(--query); color: #0c0f18; padding: 11px 15px; border-radius: 14px 14px 4px 14px; font-size: 14px; margin-left: auto; max-width: 80%; width: fit-content; font-weight: 500; }
+  .bubble-a { background: var(--surface); border: 1px solid var(--border); padding: 14px 16px; border-radius: 14px 14px 14px 4px; margin-top: 12px; font-size: 14px; }
+  .cite { font-family: var(--mono); font-size: 11px; color: var(--query); border: 1px solid var(--query); border-radius: 4px; padding: 0 5px; cursor: help; vertical-align: 1px; }
+  .approval { margin-top: 16px; border: 1px solid var(--action); border-radius: 12px; overflow: hidden; }
+  .approval .ahead { background: color-mix(in srgb, var(--action) 12%, transparent); padding: 10px 14px; display: flex; align-items: center; gap: 10px; font-size: 13px; font-weight: 600; }
+  .approval .abody { padding: 13px 14px; font-size: 13px; color: var(--text-dim); }
+  .approval .preview { background: var(--surface-2); border: 1px solid var(--border); border-radius: 8px; padding: 11px 13px; color: var(--text); font-size: 13px; margin: 10px 0; }
+  .approval .actions { display: flex; gap: 9px; }
+  .approval .risk { margin-left: auto; font-family: var(--mono); font-size: 10.5px; color: var(--skill); border: 1px solid var(--skill); padding: 2px 8px; border-radius: 999px; text-transform: uppercase; }
+  .btn.approve { background: var(--skill); color: #08130c; border-color: var(--skill); font-weight: 600; }
+  .btn.reject { background: transparent; color: var(--action); border-color: var(--action); }
+
+  footer { padding: 34px 0 60px; color: var(--text-faint); font-size: 12.5px; }
+  footer code { color: var(--text-dim); }
+
+  .clusterviz { display: grid; grid-template-columns: 1.2fr 34px 1fr; gap: 10px; align-items: center; }
+  @media (max-width: 760px){ .clusterviz{ grid-template-columns:1fr; } }
+  .clusterpool { display: grid; gap: 8px; }
+  .minichunk { border: 1px solid var(--border); border-left: 3px solid var(--chunk); border-radius: 7px; padding: 8px 10px; background: var(--surface); font-size: 12px; }
+  .minichunk .src { font-family: var(--mono); font-size: 10.5px; }
+  .conf-calc { font-family: var(--mono); font-size: 12px; display: grid; gap: 4px; margin-top: 8px; }
+  .conf-calc .row { display: flex; gap: 8px; }
+  .conf-calc .ok { color: var(--skill); }
+  .pill-high { color: var(--skill); border: 1px solid var(--skill); border-radius:999px; padding: 1px 9px; font-weight:700; }
+</style>
+</head>
+<body>
+
+<header class="hero">
+  <div class="wrap">
+    <div class="eyebrow">Documentation artifact · sourced from BUILD_PLAN.md</div>
+    <h1>Pragma, <span class="accent">end&nbsp;to&nbsp;end</span></h1>
+    <p class="lede">One concrete example — a customer’s webhook problem — followed through every stage of the
+      pipeline, from raw source messages to a cited answer and a guardrailed action. Each payload keeps its
+      <em>color</em> as it’s transformed, so you can watch a Slack thread become a Document, become Chunks,
+      become Vectors, become a Skill.</p>
+    <div class="legend" id="legend">
+      <span class="chip"><span class="dot" style="color:var(--source)"></span>Source</span>
+      <span class="chip"><span class="dot" style="color:var(--doc)"></span>Document</span>
+      <span class="chip"><span class="dot" style="color:var(--chunk)"></span>Chunk</span>
+      <span class="chip"><span class="dot" style="color:var(--vector)"></span>Vector</span>
+      <span class="chip"><span class="dot" style="color:var(--skill)"></span>Skill</span>
+      <span class="chip"><span class="dot" style="color:var(--action)"></span>Action</span>
+      <span class="chip"><span class="dot" style="color:var(--guardrail)"></span>Guardrail</span>
+    </div>
+  </div>
+</header>
+
+<nav class="pipeline">
+  <div class="pipeline-track" id="ptrack">
+    <button class="pstep" data-target="s1"><span class="num" style="background:var(--source);border-color:var(--source)">1</span><span class="plabel">Sources</span><span class="arrow">→</span></button>
+    <button class="pstep" data-target="s2"><span class="num" style="background:var(--doc);border-color:var(--doc)">2</span><span class="plabel">Normalize</span><span class="arrow">→</span></button>
+    <button class="pstep" data-target="s3"><span class="num" style="background:var(--chunk);border-color:var(--chunk)">3</span><span class="plabel">Chunk</span><span class="arrow">→</span></button>
+    <button class="pstep" data-target="s4"><span class="num" style="background:var(--vector);border-color:var(--vector)">4</span><span class="plabel">Embed + Store</span><span class="arrow">→</span></button>
+    <button class="pstep" data-target="s5"><span class="num" style="background:var(--query);border-color:var(--query)">5</span><span class="plabel">Retrieve</span><span class="arrow">→</span></button>
+    <button class="pstep" data-target="s6"><span class="num" style="background:var(--skill);border-color:var(--skill)">6</span><span class="plabel">Skill</span><span class="arrow">→</span></button>
+    <button class="pstep" data-target="s7"><span class="num" style="background:var(--action);border-color:var(--action)">7</span><span class="plabel">Guardrail</span><span class="arrow">→</span></button>
+    <button class="pstep" data-target="s8"><span class="num" style="background:var(--user);border-color:var(--user)">8</span><span class="plabel">User view</span><span class="arrow">→</span></button>
+  </div>
+</nav>
+
+<div class="wrap">
+  <div class="controls">
+    <button class="btn" id="toggleAll">Collapse all</button>
+    <span class="faint small">Click any stage header to fold it. Click a step above to jump.</span>
+  </div>
+</div>
+
+<main class="wrap">
+
+  <!-- ========================= STAGE 1 ========================= -->
+  <section class="stage" id="s1">
+    <div class="stage-head">
+      <div class="stage-num" style="background:var(--source)">1</div>
+      <div>
+        <div class="stage-title">Raw sources</div>
+        <div class="stage-sub">What lands from the connectors — four different systems, four different shapes.</div>
+      </div>
+      <span class="stage-tag" style="color:var(--source)">source</span>
+      <span class="chev">▾</span>
+    </div>
+    <div class="stage-body">
+      <div class="grid cols-2">
+        <div class="card t-source">
+          <div class="card-head"><span class="badge b-source">Slack</span><span class="card-title">#support-webhooks — thread</span></div>
+          <div class="small muted">A customer thread, 1 question + 3 replies. Reactions and a join message included (the join is bot noise).</div>
+          <pre class="raw">{
+  <span class="key">"channel"</span>: <span class="str">"support-webhooks"</span>,
+  <span class="key">"thread_ts"</span>: <span class="str">"1718900112.204"</span>,
+  <span class="key">"messages"</span>: [
+    {<span class="key">"user"</span>:<span class="str">"acme_dana"</span>, <span class="key">"text"</span>:<span class="str">"Our webhook endpoint gets the SAME event twice during retries — is that expected?"</span>},
+    {<span class="key">"user"</span>:<span class="str">"eng_ravi"</span>, <span class="key">"text"</span>:<span class="str">"Yes — retries are at-least-once. Dedupe on the `X-Event-Id` header."</span>},
+    {<span class="key">"user"</span>:<span class="str">"eng_ravi"</span>, <span class="key">"text"</span>:<span class="str">"Backoff is exponential; a 500 just gets re-delivered."</span>},
+    {<span class="key">"user"</span>:<span class="str">"acme_dana"</span>, <span class="key">"text"</span>:<span class="str">"Got it, we’ll key off X-Event-Id. Thanks!"</span>},
+    <span class="cmt">{"subtype":"channel_join", "user":"acme_dana"}   // dropped in normalize</span>
+  ]
+}</pre>
+        </div>
+
+        <div class="card t-source">
+          <div class="card-head"><span class="badge b-source">GitHub</span><span class="card-title">issue #82</span></div>
+          <div class="small muted">Bug report with a label and one maintainer comment (plus a CI bot comment that is dropped).</div>
+          <pre class="raw">{
+  <span class="key">"number"</span>: <span class="num">82</span>,
+  <span class="key">"title"</span>: <span class="str">"Webhook returns 500 on rate-limit backoff"</span>,
+  <span class="key">"user"</span>: {<span class="key">"login"</span>:<span class="str">"acme-dana"</span>},
+  <span class="key">"labels"</span>: [<span class="str">"bug"</span>, <span class="str">"webhooks"</span>],
+  <span class="key">"body"</span>: <span class="str">"When we hit the rate limit, the delivery worker throws and the endpoint 500s instead of scheduling a backoff."</span>,
+  <span class="key">"comments"</span>: [
+    {<span class="key">"user"</span>:<span class="str">"eng-ravi"</span>, <span class="key">"body"</span>:<span class="str">"Confirmed. Backoff should catch RateLimited and requeue, not surface a 500."</span>},
+    <span class="cmt">{"user":"github-actions[bot]", "body":"Coverage report…"}  // dropped in normalize</span>
+  ]
+}</pre>
+        </div>
+
+        <div class="card t-source">
+          <div class="card-head"><span class="badge b-source">Notion</span><span class="card-title">page — Webhook Delivery &amp; Retry Policy</span></div>
+          <div class="small muted">An internal policy page (rich-text blocks). This becomes the long “page” document used for chunking.</div>
+          <pre class="raw">{
+  <span class="key">"page_id"</span>: <span class="str">"n_4c1a…"</span>,
+  <span class="key">"title"</span>: <span class="str">"Webhook Delivery &amp; Retry Policy"</span>,
+  <span class="key">"blocks"</span>: [
+    {<span class="key">"type"</span>:<span class="str">"heading"</span>, <span class="key">"text"</span>:<span class="str">"Delivery guarantees"</span>},
+    {<span class="key">"type"</span>:<span class="str">"paragraph"</span>, <span class="key">"text"</span>:<span class="str">"Webhooks are **at-least-once**. Each delivery carries a stable `X-Event-Id`; consumers must dedupe on it."</span>},
+    {<span class="key">"type"</span>:<span class="str">"paragraph"</span>, <span class="key">"text"</span>:<span class="str">"On 5xx or timeout we retry with exponential backoff (1s, 2s, 4s … capped at 1h) for 24h."</span>},
+    {<span class="key">"type"</span>:<span class="str">"paragraph"</span>, <span class="key">"text"</span>:<span class="str">"Rate-limited deliveries (429) are requeued, never counted as a failed attempt."</span>}
+  ]
+}</pre>
+        </div>
+
+        <div class="card t-source">
+          <div class="card-head"><span class="badge b-source">Jira</span><span class="card-title">SUP-431</span></div>
+          <div class="small muted">A support ticket. Jira isn’t a v1 connector, but the normalizer is source-agnostic by design — adding a source is an O(1) change, so the same shape applies.</div>
+          <pre class="raw">{
+  <span class="key">"key"</span>: <span class="str">"SUP-431"</span>,
+  <span class="key">"summary"</span>: <span class="str">"Acme: duplicate webhook deliveries during incident"</span>,
+  <span class="key">"reporter"</span>: <span class="str">"dana@acme.io"</span>,
+  <span class="key">"priority"</span>: <span class="str">"High"</span>,
+  <span class="key">"description"</span>: <span class="str">"During yesterday’s rate-limit incident Acme received each webhook 2–3×. They want confirmation this is expected and how to dedupe."</span>
+}</pre>
+        </div>
+      </div>
+      <div class="note">Connectors emit raw <code>dict</code>s only. Everything downstream targets a single <code>Document</code> shape — no stage imports a connector-specific type. That’s the abstraction that keeps “add a source” cheap.</div>
+    </div>
+  </section>
+
+  <!-- ========================= STAGE 2 ========================= -->
+  <section class="stage" id="s2">
+    <div class="stage-head">
+      <div class="stage-num" style="background:var(--doc)">2</div>
+      <div>
+        <div class="stage-title">Normalization</div>
+        <div class="stage-sub">Every raw object → the canonical <code>Document</code>. Markup stripped, threads assembled, bot/CI noise dropped.</div>
+      </div>
+      <span class="stage-tag" style="color:var(--doc)">document</span>
+      <span class="chev">▾</span>
+    </div>
+    <div class="stage-body">
+
+      <div class="pair">
+        <div class="card t-source">
+          <div class="card-head"><span class="badge b-source">Slack raw</span></div>
+          <div class="small muted">4 messages + 1 join event, authored by handles, markdown intact.</div>
+        </div>
+        <div class="mid">➜</div>
+        <div class="card t-doc">
+          <div class="card-head"><span class="badge b-doc">Document</span></div>
+          <div class="kv">
+            <span class="k">source</span><span class="v">slack</span>
+            <span class="k">doc_type</span><span class="v">thread</span>
+            <span class="k">title</span><span class="v">Duplicate events during webhook retries</span>
+            <span class="k">author</span><span class="v">acme_dana</span>
+            <span class="k">participants</span><span class="v">[acme_dana, eng_ravi]</span>
+            <span class="k">content</span><span class="v">acme_dana: Our webhook endpoint gets the same event twice during retries — is that expected?
+eng_ravi: Yes — retries are at-least-once. Dedupe on the X-Event-Id header.
+eng_ravi: Backoff is exponential; a 500 just gets re-delivered.
+acme_dana: Got it, we’ll key off X-Event-Id. Thanks!</span>
+          </div>
+          <div class="small faint" style="margin-top:8px">↳ join message dropped · assembled chronologically as <code>author: text</code></div>
+        </div>
+      </div>
+
+      <div class="arrow-down">⋮</div>
+
+      <div class="grid cols-2">
+        <div class="card t-doc">
+          <div class="card-head"><span class="badge b-doc">Document</span><span class="card-title faint">from GitHub #82</span></div>
+          <div class="kv">
+            <span class="k">source</span><span class="v">github</span>
+            <span class="k">doc_type</span><span class="v">issue</span>
+            <span class="k">title</span><span class="v">Webhook returns 500 on rate-limit backoff</span>
+            <span class="k">author</span><span class="v">acme-dana</span>
+            <span class="k">content</span><span class="v">Webhook returns 500 on rate-limit backoff. When we hit the rate limit, the delivery worker throws and the endpoint 500s instead of scheduling a backoff. eng-ravi: Confirmed. Backoff should catch RateLimited and requeue, not surface a 500.</span>
+            <span class="k">url</span><span class="v">github.com/acme/api/issues/82</span>
+          </div>
+          <div class="small faint" style="margin-top:8px">↳ title + body + human comments concatenated · <code>github-actions[bot]</code> dropped</div>
+        </div>
+
+        <div class="card t-doc">
+          <div class="card-head"><span class="badge b-doc">Document</span><span class="card-title faint">from Notion page</span></div>
+          <div class="kv">
+            <span class="k">source</span><span class="v">notion</span>
+            <span class="k">doc_type</span><span class="v">page</span>
+            <span class="k">title</span><span class="v">Webhook Delivery &amp; Retry Policy</span>
+            <span class="k">author</span><span class="v">platform-team</span>
+            <span class="k">content</span><span class="v">Delivery guarantees. Webhooks are at-least-once. Each delivery carries a stable X-Event-Id; consumers must dedupe on it. On 5xx or timeout we retry with exponential backoff (1s, 2s, 4s … capped at 1h) for 24h. Rate-limited deliveries (429) are requeued, never counted as a failed attempt.</span>
+          </div>
+          <div class="small faint" style="margin-top:8px">↳ blocks recursed in order · <code>**markdown**</code> stripped to plaintext</div>
+        </div>
+      </div>
+
+      <details class="deep">
+        <summary>full Document contract (every field)</summary>
+        <div class="deep-body">
+          <pre class="raw"><span class="cmt"># app/models/document.py — Document</span>
+id           <span class="cmt"># sha256(source + ":" + source_id) — stable across re-syncs</span>
+source       <span class="cmt"># slack | github | notion | …</span>
+doc_type     <span class="cmt"># thread | pr | page | issue | comment</span>
+title, content, author, participants[]
+created_at, updated_at, url
+content_hash <span class="cmt"># sha256(content) — dedup skips unchanged docs</span>
+metadata{}   <span class="cmt"># source-specific extras (source_id, reactions, labels…)</span>
+trace_id     <span class="cmt"># threads through Chunk → Skill → GuardrailRequest → Audit</span></pre>
+        </div>
+      </details>
+    </div>
+  </section>
+
+  <!-- ========================= STAGE 3 ========================= -->
+  <section class="stage" id="s3">
+    <div class="stage-head">
+      <div class="stage-num" style="background:var(--chunk)">3</div>
+      <div>
+        <div class="stage-title">Chunking</div>
+        <div class="stage-sub">The Notion <code>page</code> is split with 10% overlap. Size is per <code>doc_type</code>.</div>
+      </div>
+      <span class="stage-tag" style="color:var(--chunk)">chunk</span>
+      <span class="chev">▾</span>
+    </div>
+    <div class="stage-body">
+      <div class="grid cols-4" style="margin-bottom:16px">
+        <div class="card t-chunk"><div class="small faint">thread</div><div class="mono" style="font-size:19px;color:var(--chunk)">256</div><div class="small faint">tokens</div></div>
+        <div class="card t-chunk"><div class="small faint">pr</div><div class="mono" style="font-size:19px;color:var(--chunk)">512</div><div class="small faint">tokens</div></div>
+        <div class="card t-chunk" style="outline:1px solid var(--chunk)"><div class="small faint">page ← this doc</div><div class="mono" style="font-size:19px;color:var(--chunk)">768</div><div class="small faint">tokens</div></div>
+        <div class="card t-chunk"><div class="small faint">issue</div><div class="mono" style="font-size:19px;color:var(--chunk)">256</div><div class="small faint">tokens</div></div>
+      </div>
+
+      <div class="small muted" style="margin-bottom:10px">
+        <span class="spec">CHUNK_SIZES["page"] = 768</span> · <span class="spec">overlap ≈ 10% (~77 tok)</span> · <span class="spec">RecursiveCharacterTextSplitter</span> · <span class="spec">id = doc.id + "_" + sha256(content)[:12]</span>
+        <br/>The overlap (highlighted) means a sentence spanning a boundary survives in <em>both</em> neighbours, so retrieval never loses it at a cut. Chunk IDs are content-hashed, not positional — re-chunking doesn’t silently rename a chunk.
+      </div>
+
+      <div class="chunk-block">
+        <div class="chead"><span style="color:var(--chunk)">chunk 0/3</span><span>position 0</span><span>id n_4c1a…_9f2ac7b1e004</span></div>
+        <div class="ctext">Delivery guarantees. Webhooks are at-least-once. Each delivery carries a stable X-Event-Id; <span class="overlap">consumers must dedupe on it.</span></div>
+      </div>
+      <div class="chunk-block">
+        <div class="chead"><span style="color:var(--chunk)">chunk 1/3</span><span>position 1</span><span>id n_4c1a…_3b7d10c9aa52</span></div>
+        <div class="ctext"><span class="overlap">consumers must dedupe on it.</span> On 5xx or timeout we retry with exponential backoff (1s, 2s, 4s … <span class="overlap">capped at 1h) for 24h.</span></div>
+      </div>
+      <div class="chunk-block">
+        <div class="chead"><span style="color:var(--chunk)">chunk 2/3</span><span>position 2</span><span>id n_4c1a…_c05e8817fd39</span></div>
+        <div class="ctext"><span class="overlap">capped at 1h) for 24h.</span> Rate-limited deliveries (429) are requeued, never counted as a failed attempt.</div>
+      </div>
+      <div class="note">Each chunk carries the parent’s metadata forward (source, doc_type, title, url, author, trace_id) plus <code>position</code> and <code>total_chunks = 3</code>, so a retrieved chunk is self-describing.</div>
+    </div>
+  </section>
+
+  <!-- ========================= STAGE 4 ========================= -->
+  <section class="stage" id="s4">
+    <div class="stage-head">
+      <div class="stage-num" style="background:var(--vector)">4</div>
+      <div>
+        <div class="stage-title">Embedding + storage</div>
+        <div class="stage-sub">Each chunk → a 1024-dim vector (Voyage <code>voyage-3.5</code>), written to the <code>chunks</code> table with its metadata.</div>
+      </div>
+      <span class="stage-tag" style="color:var(--vector)">vector</span>
+      <span class="chev">▾</span>
+    </div>
+    <div class="stage-body">
+      <div class="grid cols-2" style="margin-bottom:16px">
+        <div class="card t-chunk">
+          <div class="card-head"><span class="badge b-chunk">chunk 1/3</span></div>
+          <div class="small">“…exponential backoff (1s, 2s, 4s … capped at 1h) for 24h.”</div>
+        </div>
+        <div class="card t-vector">
+          <div class="card-head"><span class="badge b-vector">embedding</span><span class="small faint">voyage-3.5 · 1024-dim</span></div>
+          <div class="vec" id="vecbars"></div>
+          <div class="vecrow">[ 0.021, −0.114, 0.087, 0.043, 0.190, −0.056, … , −0.008 ]</div>
+        </div>
+      </div>
+
+      <div class="tablewrap">
+        <table class="dbtable">
+          <thead><tr>
+            <th>id</th><th>doc_id</th><th>source</th><th>doc_type</th><th>position</th><th>content</th><th>embedding</th><th>embedding_model</th><th>near_dup_of</th>
+          </tr></thead>
+          <tbody>
+            <tr><td>n_4c1a…_9f2ac7b1</td><td>n_4c1a…</td><td style="color:var(--source)">notion</td><td>page</td><td>0</td><td>Delivery guarantees. Webhooks are…</td><td style="color:var(--vector)">vec[1024]</td><td>voyage-3.5</td><td>—</td></tr>
+            <tr><td>n_4c1a…_3b7d10c9</td><td>n_4c1a…</td><td style="color:var(--source)">notion</td><td>page</td><td>1</td><td>consumers must dedupe… backoff…</td><td style="color:var(--vector)">vec[1024]</td><td>voyage-3.5</td><td>—</td></tr>
+            <tr><td>gh_82…_71e0c4a3</td><td>gh_82…</td><td style="color:var(--source)">github</td><td>issue</td><td>0</td><td>Webhook returns 500 on rate-limit…</td><td style="color:var(--vector)">vec[1024]</td><td>voyage-3.5</td><td>—</td></tr>
+            <tr><td>sl_18…_2ad9f0b6</td><td>sl_18…</td><td style="color:var(--source)">slack</td><td>thread</td><td>0</td><td>dedupe on the X-Event-Id header…</td><td style="color:var(--vector)">vec[1024]</td><td style="color:var(--chunk)">gh_82…_71e0c4a3</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="note">
+        Storage is atomic: on a document update, old chunks are deleted and new ones inserted inside one transaction — never a half-written doc.
+        The last row shows <b>near-duplicate linking</b>: the Slack “dedupe on X-Event-Id” chunk is &gt;0.97 cosine-similar to the GitHub chunk from a <em>different source</em>, so it’s linked via <code>near_duplicate_of</code> instead of stored as independent knowledge. Index: <span class="spec">HNSW · vector_cosine_ops · m=16 · ef_construction=64</span>.
+      </div>
+    </div>
+  </section>
+
+  <!-- ========================= STAGE 5 ========================= -->
+  <section class="stage" id="s5">
+    <div class="stage-head">
+      <div class="stage-num" style="background:var(--query)">5</div>
+      <div>
+        <div class="stage-title">Retrieval — hybrid search</div>
+        <div class="stage-sub">One question, two retrievers run concurrently, fused by RRF, reranked, diversified by MMR.</div>
+      </div>
+      <span class="stage-tag" style="color:var(--query)">query</span>
+      <span class="chev">▾</span>
+    </div>
+    <div class="stage-body">
+      <div class="bubble-q" style="margin:0 0 14px 0">why does the webhook fail for Acme?</div>
+      <div class="controls" style="margin-top:0">
+        <button class="btn primary" id="runSearch">▶ Run hybrid search</button>
+        <span class="faint small">walks dense + sparse → RRF → rerank → MMR</span>
+      </div>
+
+      <div class="ret-grid" style="margin-top:14px">
+        <div class="card t-query">
+          <div class="card-head"><span class="badge b-query">dense</span><span class="small faint">vector_store.similarity_search · cosine</span></div>
+          <div class="small muted">Semantic match on the query embedding — finds meaning, not words.</div>
+          <ul class="ranklist">
+            <li><span class="r">#1</span><span class="who A">A · notion</span><span class="small">retry/backoff policy</span><span class="sc">0.83</span></li>
+            <li><span class="r">#2</span><span class="who B">B · github</span><span class="small">#82 500 on backoff</span><span class="sc">0.79</span></li>
+            <li><span class="r">#3</span><span class="who C">C · slack</span><span class="small">at-least-once note</span><span class="sc">0.74</span></li>
+          </ul>
+        </div>
+        <div class="card t-query">
+          <div class="card-head"><span class="badge b-query">sparse</span><span class="small faint">Postgres FTS · websearch_to_tsquery + ts_rank_cd</span></div>
+          <div class="small muted">Keyword match — nails literals like “500”, “webhook”, “rate-limit”.</div>
+          <ul class="ranklist">
+            <li><span class="r">#1</span><span class="who B">B · github</span><span class="small">“500 … rate-limit”</span><span class="sc">0.91</span></li>
+            <li><span class="r">#2</span><span class="who D">D · jira</span><span class="small">SUP-431 duplicate</span><span class="sc">0.61</span></li>
+            <li><span class="r">#3</span><span class="who A">A · notion</span><span class="small">“retry … backoff”</span><span class="sc">0.55</span></li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="pipeflow">
+        <div class="pstage" id="ps-rrf">
+          <h4>Reciprocal Rank Fusion <span class="spec">score(d) = Σ 1/(k + rank), k = 60</span></h4>
+          <div class="small muted" style="margin-bottom:8px">Scale-free: it uses only ranks, so incomparable dense-cosine and FTS-rank scores fuse without normalization. A chunk found by <em>both</em> retrievers accumulates two terms and rises.</div>
+          <ul class="ranklist">
+            <li><span class="r">#1</span><span class="who B">B</span><span class="small">github #82 — found by both (sparse#1 + dense#2)</span><span class="sc">1/61 + 1/62 = 0.0325</span></li>
+            <li><span class="r">#2</span><span class="who A">A</span><span class="small">notion policy — found by both (dense#1 + sparse#3)</span><span class="sc">1/61 + 1/63 = 0.0323</span></li>
+            <li><span class="r">#3</span><span class="who D">D</span><span class="small">jira — sparse only</span><span class="sc">1/62 = 0.0161</span></li>
+            <li><span class="r">#4</span><span class="who C">C</span><span class="small">slack — dense only</span><span class="sc">1/63 = 0.0159</span></li>
+          </ul>
+          <div class="small faint" style="margin-top:7px">↳ B and A — the two chunks both retrievers agreed on — top the fused list. Agreement is itself evidence of relevance.</div>
+        </div>
+
+        <div class="pstage" id="ps-rerank">
+          <h4>Rerank <span class="spec">window rerank_n = 20 · cross-encoder</span></h4>
+          <div class="small muted">A cross-encoder re-scores the fused top-N against the query directly (query+chunk together, not two independent vectors). Here it lifts <b class="mono" style="color:var(--source)">B</b> (the actual bug: “500 on rate-limit backoff”) above <b class="mono" style="color:var(--doc)">A</b>. Fusion’s job was recall; the reranker’s job is precision.</div>
+          <ul class="ranklist" style="margin-top:8px">
+            <li><span class="r">#1</span><span class="who B">B</span><span class="small">github #82 — directly answers the failure</span><span class="sc">rerank 0.94</span></li>
+            <li><span class="r">#2</span><span class="who A">A</span><span class="small">notion — explains expected behavior</span><span class="sc">rerank 0.88</span></li>
+            <li><span class="r">#3</span><span class="who C">C</span><span class="small">slack — paraphrase of A</span><span class="sc">rerank 0.86</span></li>
+            <li><span class="r">#4</span><span class="who D">D</span><span class="small">jira</span><span class="sc">rerank 0.52</span></li>
+          </ul>
+        </div>
+
+        <div class="pstage" id="ps-mmr">
+          <h4>MMR — diversify <span class="spec">argmax λ·rel(d) − (1−λ)·max_sim(d, selected) · λ = 0.7</span></h4>
+          <div class="small muted">
+            <b class="mono" style="color:var(--chunk)">C</b> (slack) is a near-paraphrase of <b class="mono" style="color:var(--doc)">A</b> (notion) — cosine ≈ 0.9. At λ=0.7 a duplicate must be
+            <b>(1−λ)/λ ≈ 0.43</b> more relevant to survive; C isn’t, so MMR drops it and keeps the diverse set.
+            The top pick is never displaced (penalty is 0 with nothing yet selected).
+          </div>
+          <ul class="ranklist" style="margin-top:8px">
+            <li><span class="r">✓</span><span class="who B">B</span><span class="small">kept — top relevance, first pick</span><span class="sc">selected</span></li>
+            <li><span class="r">✓</span><span class="who A">A</span><span class="small">kept — relevant & diverse from B</span><span class="sc">selected</span></li>
+            <li><span class="r">✗</span><span class="who C">C</span><span class="small">dropped — ~0.9 similar to A, edge &lt; 0.43</span><span class="sc" style="color:var(--action)">trimmed</span></li>
+            <li><span class="r">✓</span><span class="who D">D</span><span class="small">promoted — adds a distinct angle</span><span class="sc">selected</span></li>
+          </ul>
+        </div>
+
+        <div class="pstage" id="ps-final">
+          <h4>Final context <span class="spec">top-k = 8</span></h4>
+          <div class="small">Passed to the answer step, in order: <b class="mono" style="color:var(--source)">B</b> github #82 · <b class="mono" style="color:var(--doc)">A</b> notion policy · <b class="mono" style="color:var(--vector)">D</b> jira SUP-431.</div>
+        </div>
+      </div>
+      <div class="note">Whole pipeline is the hot path: workspace-scoped on every query, read-only, no cold-path work, &lt;500ms budget. <span class="spec">dense ∥ sparse → rrf_fuse → [:20] → rerank → mmr_select → top-k</span></div>
+    </div>
+  </section>
+
+  <!-- ========================= STAGE 6 ========================= -->
+  <section class="stage" id="s6">
+    <div class="stage-head">
+      <div class="stage-num" style="background:var(--skill)">6</div>
+      <div>
+        <div class="stage-title">Skill generation</div>
+        <div class="stage-sub">Repeated similar chunks cluster (HDBSCAN); an LLM synthesizes one sourced, versioned Skill.</div>
+      </div>
+      <span class="stage-tag" style="color:var(--skill)">skill</span>
+      <span class="chev">▾</span>
+    </div>
+    <div class="stage-body">
+      <div class="clusterviz">
+        <div class="clusterpool">
+          <div class="small faint" style="margin-bottom:2px">cluster <span class="mono">c_webhook_retry</span> — 4 chunks, 3 sources <span class="spec">HDBSCAN min_cluster_size=3</span></div>
+          <div class="minichunk"><span class="src" style="color:var(--source)">notion</span> — at-least-once; dedupe on X-Event-Id; retry w/ exponential backoff 24h</div>
+          <div class="minichunk"><span class="src" style="color:var(--source)">github</span> — #82: 500 on rate-limit; backoff should requeue, not surface 500</div>
+          <div class="minichunk"><span class="src" style="color:var(--source)">slack</span> — retries are at-least-once; a 500 just gets re-delivered</div>
+          <div class="minichunk"><span class="src" style="color:var(--source)">jira</span> — SUP-431: duplicate deliveries during rate-limit incident</div>
+        </div>
+        <div class="mid" style="display:grid;place-items:center;color:var(--text-faint);font-size:22px">➜</div>
+        <div class="card t-skill">
+          <div class="card-head"><span class="badge b-skill">Skill</span><span class="mono small faint">v1</span></div>
+          <div class="kv">
+            <span class="k">skill_name</span><span class="v">Handle duplicate / failed webhook deliveries</span>
+            <span class="k">trigger</span><span class="v">customer reports duplicate or failing webhook deliveries during retries / rate limits</span>
+            <span class="k">steps</span><span class="v">1. Confirm deliveries are at-least-once by design.
+2. Tell them to dedupe on the X-Event-Id header.
+3. Explain 429/5xx → exponential backoff requeue (not a failure).
+4. If 500s persist on backoff, link issue #82.</span>
+            <span class="k">conditions</span><span class="v">{field: "plan", op: "in", value: ["pro","enterprise"], then_action: "offer_debug_session"}</span>
+            <span class="k">confidence</span><span class="v"><span class="pill-high">high</span></span>
+            <span class="k">sources</span><span class="v">notion:policy · github:#82 · slack:1718900112 · jira:SUP-431</span>
+            <span class="k">cluster_id</span><span class="v">c_webhook_retry</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="card" style="margin-top:14px">
+        <div class="card-head"><span class="badge b-skill">confidence — computed mechanically, never asked of the LLM</span></div>
+        <div class="conf-calc">
+          <div class="row"><span class="faint">distinct_sources</span><span class="ok">= 4 (notion, github, slack, jira) ≥ 3 ✓</span></div>
+          <div class="row"><span class="faint">distinct_docs&nbsp;&nbsp;&nbsp;</span><span class="ok">= 4 ✓</span></div>
+          <div class="row"><span class="faint">contradictions&nbsp;</span><span class="ok">= 0 ✓</span></div>
+          <div class="row" style="margin-top:4px"><span class="faint">⇒ confidence</span><span><span class="pill-high">high</span></span></div>
+        </div>
+        <div class="small faint" style="margin-top:8px">The LLM writes the prose (name, trigger, steps) under a structured-output schema; it does <em>not</em> get to grade its own confidence — models overestimate. Conditions are structured <code>{field, op, value}</code> data, evaluated safely later, never <code>eval()</code>’d strings.</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ========================= STAGE 7 ========================= -->
+  <section class="stage" id="s7">
+    <div class="stage-head">
+      <div class="stage-num" style="background:var(--action)">7</div>
+      <div>
+        <div class="stage-title">Guardrail + action</div>
+        <div class="stage-sub">A proposed action runs the five checks <em>in order</em>; the outcome is written to the append-only audit log.</div>
+      </div>
+      <span class="stage-tag" style="color:var(--action)">action</span>
+      <span class="chev">▾</span>
+    </div>
+    <div class="stage-body">
+      <div class="scenario-tabs">
+        <button class="btn active" data-scn="a">Action: draft reply to Acme <span class="faint">(low risk)</span></button>
+        <button class="btn" data-scn="b">Action: refund $5,000 to Acme <span class="faint">(high risk)</span></button>
+      </div>
+
+      <div class="checks" id="checks"></div>
+      <div class="decision" id="decision"></div>
+
+      <details class="deep">
+        <summary>the audit row that gets written (append-only, on every outcome)</summary>
+        <div class="deep-body"><pre class="raw" id="auditrow"></pre></div>
+      </details>
+      <div class="note">Every action tool goes through <code>guardrails.pipeline.evaluate()</code> — never called directly — and every call requires a <code>skill_id</code> (the agent must fetch the skill before acting). The five checks are strictly ordered; an early failure short-circuits. <span class="spec">skill match → condition eval → permission → risk tier → idempotency</span></div>
+    </div>
+  </section>
+
+  <!-- ========================= STAGE 8 ========================= -->
+  <section class="stage" id="s8">
+    <div class="stage-head">
+      <div class="stage-num" style="background:var(--user)">8</div>
+      <div>
+        <div class="stage-title">User-facing view</div>
+        <div class="stage-sub">Everything above collapses into two things the user actually touches: a cited answer, and an approval card.</div>
+      </div>
+      <span class="stage-tag" style="color:var(--user)">user</span>
+      <span class="chev">▾</span>
+    </div>
+    <div class="stage-body">
+      <div class="chat">
+        <div class="bubble-q">why does the webhook fail for Acme?</div>
+        <div class="bubble-a">
+          Acme’s endpoint returns a <b>500 on rate-limit backoff</b>: when the rate limit is hit, the delivery worker
+          throws instead of requeuing <span class="cite" title="GitHub issue #82">#82</span>. By design, deliveries are
+          <b>at-least-once</b> and rate-limited (429) or 5xx attempts are retried with exponential backoff for 24h —
+          they should be <em>requeued, not surfaced as failures</em> <span class="cite" title="Notion — Webhook Delivery &amp; Retry Policy">policy</span>.
+          Acme should also dedupe on the <code>X-Event-Id</code> header to handle the duplicate deliveries they saw
+          <span class="cite" title="Jira SUP-431">SUP-431</span>.
+          <div class="flowline">answer synthesized skills-first, else RAG — always with citations</div>
+        </div>
+
+        <div class="approval">
+          <div class="ahead"><span class="badge b-action">action</span> Draft reply to Acme <span class="risk">low risk · auto-approvable</span></div>
+          <div class="abody">
+            Proposed by the agent, gated by the guardrail pipeline, shown to a human before it sends:
+            <div class="preview">Hi Dana — those duplicate deliveries are expected: our webhooks are at-least-once, so during the rate-limit
+              incident each event was re-delivered on backoff. Dedupe on the <code>X-Event-Id</code> header and you’ll
+              collapse them safely. The 500 you saw on backoff is a bug we’re tracking in #82. — Support</div>
+            <div class="actions">
+              <button class="btn approve">✓ Approve &amp; send</button>
+              <button class="btn reject">✗ Reject</button>
+              <span class="risk" style="margin-left:auto">skill_id ✓ · idempotency-key set</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="note" style="max-width:640px;margin-left:auto;margin-right:auto">Buttons are illustrative — this file is a documentation artifact and touches no real Pragma code. The high-risk refund from stage 7 would appear here instead as a <em>“needs approval”</em> card routed to the human queue, never auto-sent.</div>
+    </div>
+  </section>
+
+</main>
+
+<footer>
+  <div class="wrap">
+    Pragma architecture demo · a static, self-contained documentation artifact. Not wired into the FastAPI app, not tested, touches no source.
+    Behaviors (RRF k=60, MMR λ=0.7, Postgres FTS, CHUNK_SIZES, mechanical confidence, the five ordered guardrail checks) are sourced from <code>docs/BUILD_PLAN.md</code>.
+  </div>
+</footer>
+
+<script>
+  // ---- vector bars ----
+  (function () {
+    const bars = document.getElementById('vecbars');
+    if (!bars) return;
+    const seed = [7,3,9,5,8,4,6,9,2,7,5,8,3,6,9,4,7,2,8,5,6,3,9,7,4,8,2,6,5,9,3,7,8,4,6,2,9,5,7,3];
+    seed.forEach(h => { const b = document.createElement('i'); b.style.height = (h * 3.4 + 3) + 'px'; bars.appendChild(b); });
+  })();
+
+  // ---- collapse / expand sections ----
+  document.querySelectorAll('.stage-head').forEach(h => {
+    h.addEventListener('click', () => h.closest('.stage').classList.toggle('collapsed'));
+  });
+  const toggleAll = document.getElementById('toggleAll');
+  toggleAll.addEventListener('click', () => {
+    const anyOpen = [...document.querySelectorAll('.stage')].some(s => !s.classList.contains('collapsed'));
+    document.querySelectorAll('.stage').forEach(s => s.classList.toggle('collapsed', anyOpen));
+    toggleAll.textContent = anyOpen ? 'Expand all' : 'Collapse all';
+  });
+
+  // ---- pipeline nav: jump + active on scroll ----
+  document.querySelectorAll('.pstep').forEach(step => {
+    step.addEventListener('click', () => {
+      const sec = document.getElementById(step.dataset.target);
+      sec.classList.remove('collapsed');
+      sec.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+  });
+  const steps = [...document.querySelectorAll('.pstep')];
+  const io = new IntersectionObserver(entries => {
+    entries.forEach(e => {
+      if (e.isIntersecting) {
+        steps.forEach(s => s.classList.toggle('active', s.dataset.target === e.target.id));
+      }
+    });
+  }, { rootMargin: '-45% 0px -50% 0px' });
+  document.querySelectorAll('section.stage').forEach(s => io.observe(s));
+
+  // ---- retrieval: staggered reveal ----
+  const stagesR = ['ps-rrf', 'ps-rerank', 'ps-mmr', 'ps-final'];
+  document.getElementById('runSearch').addEventListener('click', () => {
+    stagesR.forEach(id => document.getElementById(id).classList.remove('on'));
+    stagesR.forEach((id, i) => setTimeout(() => document.getElementById(id).classList.add('on'), 260 * (i + 1)));
+  });
+
+  // ---- guardrail scenarios ----
+  const SCEN = {
+    a: {
+      title: 'draft reply to Acme',
+      checks: [
+        ['skill match', 'action cites skill_id c_webhook_retry — exists & trigger matches', 'PASS', 'st-pass'],
+        ['condition eval', '{plan in [pro,enterprise]} vs context plan=enterprise → offer_debug_session; no blocking condition', 'PASS', 'st-pass'],
+        ['permission', 'agent support-bot has grant for tool draft_reply, scope=support', 'PASS', 'st-pass'],
+        ['risk tier', 'RISK_TIERS["draft_reply"] = low → no human approval required', 'PASS', 'st-pass'],
+        ['idempotency', 'key = sha256(agent+tool+params); insert-first, no prior row → claimed', 'PASS', 'st-pass'],
+      ],
+      decision: { cls: 'approved', html: 'outcome = <b>approved</b> · risk_tier = <b>low</b> · requires_human = <b>false</b> · executed = <b>true</b>' },
+      audit: `{
+  "request_id": "req_a1f0",
+  "tool_name": "draft_reply",
+  "skill_id": "c_webhook_retry",
+  "params": { "customer": "acme", "channel": "email" },
+  "outcome": "approved",
+  "failed_check": null,
+  "risk_tier": "low",
+  "idempotency_key": "9c2e…b4",
+  "executed": true,
+  "executed_at": "2026-07-11T10:04:22Z",
+  "trace_id": "tr_7d31c9a2"
+}`
+    },
+    b: {
+      title: 'refund $5,000 to Acme',
+      checks: [
+        ['skill match', 'action cites skill_id — exists', 'PASS', 'st-pass'],
+        ['condition eval', '{amount > 1000 → require_human} vs amount=5000 → true', 'PASS', 'st-pass'],
+        ['permission', 'grant for issue_refund has max_amount=$1,000; requested $5,000 > cap → over-threshold', 'ESCALATE', 'st-esc'],
+        ['risk tier', 'RISK_TIERS["issue_refund"] = high → human approval required regardless', 'ESCALATE', 'st-esc'],
+        ['idempotency', 'not reached — pipeline short-circuits to the approval queue', 'SKIPPED', 'st-skip'],
+      ],
+      decision: { cls: 'escalated', html: 'outcome = <b>escalated</b> · failed_check = <b>permission</b> · risk_tier = <b>high</b> · requires_human = <b>true</b> · executed = <b>false</b>' },
+      audit: `{
+  "request_id": "req_b7e2",
+  "tool_name": "issue_refund",
+  "skill_id": "c_refund_policy",
+  "params": { "customer": "acme", "amount": 5000, "currency": "usd" },
+  "outcome": "escalated",
+  "failed_check": "permission",
+  "risk_tier": "high",
+  "idempotency_key": "e10a…7f",
+  "executed": false,
+  "executed_at": null,
+  "trace_id": "tr_55b0e4d1"
+}`
+    }
+  };
+
+  function renderScenario(key) {
+    const s = SCEN[key];
+    const checks = document.getElementById('checks');
+    checks.innerHTML = s.checks.map((c, i) => `
+      <div class="check">
+        <span class="cn">${i + 1}</span>
+        <div class="cbody"><div class="cname">${c[0]}</div><div class="cdesc">${c[1]}</div></div>
+        <span class="cstat ${c[3]}">${c[2]}</span>
+      </div>`).join('');
+    const dec = document.getElementById('decision');
+    dec.className = 'decision ' + s.decision.cls;
+    dec.innerHTML = s.decision.html;
+    document.getElementById('auditrow').textContent = s.audit;
+  }
+  document.querySelectorAll('.scenario-tabs .btn').forEach(b => {
+    b.addEventListener('click', () => {
+      document.querySelectorAll('.scenario-tabs .btn').forEach(x => x.classList.remove('active'));
+      b.classList.add('active');
+      renderScenario(b.dataset.scn);
+    });
+  });
+  renderScenario('a');
+</script>
+</body>
+</html>
